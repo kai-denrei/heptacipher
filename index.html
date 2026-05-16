@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=bb11558f" />
+  <link rel="manifest" href="manifest.webmanifest?v=e52a6dea" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=bb11558f" />
+  <link rel="apple-touch-icon" href="icon.svg?v=e52a6dea" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
@@ -22,9 +22,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="bb11558f" />
-  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/59.svg?v=bb11558f" />
-  <script src="public/cb-badge.js?v=bb11558f" defer></script>
+  <meta name="cb" content="e52a6dea" />
+  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/37.svg?v=e52a6dea" />
+  <script src="public/cb-badge.js?v=e52a6dea" defer></script>
 
   <style>
     :root {
@@ -39,11 +39,11 @@
          (NB: scaled with speed in the animation rules so it stays proportional
          and never pokes the crisp layer past the quadrant boundary),
          200ms per-mark stride, 30px sweep-mask feather. */
-      --quiz-anim-scale: 3;
-      --quiz-anim-blur: 2;
-      --quiz-anim-overshoot: 0;
-      --quiz-anim-stagger: 30ms;
-      --quiz-mark-stride: 200ms;
+      --quiz-anim-scale: 0.40;
+      --quiz-anim-blur: 2.5;
+      --quiz-anim-overshoot: 1.35;
+      --quiz-anim-stagger: 145ms;
+      --quiz-mark-stride: 20ms;
       /* Smoothness = the spatial fade-zone width on the mask's leading edge.
          Wider value = each position on the ring takes longer to transition
          from invisible to fully visible as the brush passes — reads as a
@@ -57,7 +57,7 @@
          Solving: sweep_duration = lobe_duration × 4 / body_frac.
          Using body_frac ≈ 0.937: sweep factor = 4 / 0.937 = 4.27.
          JS uses the actual per-render body_frac for the sweep itself. */
-      --quiz-bloom-mark-dur: 250ms;
+      --quiz-bloom-mark-dur: 310ms;
       --quiz-lobe-duration: calc(var(--quiz-bloom-mark-dur) + 4 * var(--quiz-mark-stride));
       --quiz-quadrant-time: var(--quiz-lobe-duration);
       --quiz-sweep-factor: 4.27;
@@ -182,7 +182,7 @@
       line-height: 1.3;
       max-width: 132px;
     }
-    .quiz-feedback.correct { color: #b88800; font-style: normal; font-weight: 600; }
+    .quiz-feedback.correct { color: #1d8888; font-style: normal; font-weight: 600; }
     .quiz-feedback.wrong   { color: var(--accent); font-style: normal; font-weight: 600; }
 
     .quiz-summary {
@@ -365,19 +365,30 @@
       }
     }
 
-    /* Glow on guess result. */
+    /* Glow on guess result. Correct = teal, wrong = dark red + slight shake. */
     @keyframes quizGlowCorrect {
       0%   { filter: drop-shadow(0 0 0 transparent); }
-      30%  { filter: drop-shadow(0 0 28px #f5dd4b) drop-shadow(0 0 56px #f5dd4b); }
-      100% { filter: drop-shadow(0 0 18px #f5dd4b) drop-shadow(0 0 40px rgba(245,221,75,0.6)); }
+      30%  { filter: drop-shadow(0 0 28px #2ec5c5) drop-shadow(0 0 56px #2ec5c5); }
+      100% { filter: drop-shadow(0 0 18px #2ec5c5) drop-shadow(0 0 40px rgba(46,197,197,0.6)); }
     }
     @keyframes quizGlowWrong {
       0%   { filter: drop-shadow(0 0 0 transparent); opacity: 1; }
       25%  { filter: drop-shadow(0 0 26px #5a0a0a) drop-shadow(0 0 50px #5a0a0a); opacity: 1; }
       100% { filter: drop-shadow(0 0 0 transparent); opacity: 0; }
     }
+    @keyframes quizShake {
+      0%   { transform: translateX(0); }
+      10%  { transform: translateX(-8px); }
+      20%  { transform: translateX(7px); }
+      30%  { transform: translateX(-6px); }
+      40%  { transform: translateX(5px); }
+      55%  { transform: translateX(-3px); }
+      70%  { transform: translateX(2px); }
+      85%  { transform: translateX(-1px); }
+      100% { transform: translateX(0); }
+    }
     .svg-correct { animation: quizGlowCorrect 1.4s ease-out forwards; }
-    .svg-wrong   { animation: quizGlowWrong   1.3s ease-in  forwards; }
+    .svg-wrong   { animation: quizGlowWrong 1.3s ease-in forwards, quizShake 0.55s ease-out; }
   </style>
 </head>
 <body>
@@ -411,32 +422,32 @@
       </div>
       <div class="quiz-tune-panel admin-only" id="quizTunePanel" hidden>
         <label for="tuneSpeed">Speed</label>
-        <input id="tuneSpeed" type="range" min="0.4" max="5" step="0.05" value="3" />
-        <code id="tuneSpeedVal">3.00×</code>
+        <input id="tuneSpeed" type="range" min="0.4" max="5" step="0.05" value="0.4" />
+        <code id="tuneSpeedVal">0.40×</code>
 
         <label for="tuneBokeh">Bokeh</label>
-        <input id="tuneBokeh" type="range" min="0" max="2.5" step="0.05" value="2" />
-        <code id="tuneBokehVal">2.00×</code>
+        <input id="tuneBokeh" type="range" min="0" max="2.5" step="0.05" value="2.5" />
+        <code id="tuneBokehVal">2.50×</code>
 
         <label for="tuneBounce">Bounce</label>
-        <input id="tuneBounce" type="range" min="0" max="2" step="0.05" value="0" />
-        <code id="tuneBounceVal">0.00×</code>
+        <input id="tuneBounce" type="range" min="0" max="2" step="0.05" value="1.35" />
+        <code id="tuneBounceVal">1.35×</code>
 
         <label for="tuneStagger">Stagger</label>
-        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="30" />
-        <code id="tuneStaggerVal">30ms</code>
+        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="145" />
+        <code id="tuneStaggerVal">145ms</code>
 
         <label for="tuneStride">Stride</label>
-        <input id="tuneStride" type="range" min="0" max="400" step="5" value="200" />
-        <code id="tuneStrideVal">200ms</code>
+        <input id="tuneStride" type="range" min="0" max="400" step="5" value="20" />
+        <code id="tuneStrideVal">20ms</code>
 
         <label for="tuneFeather">Smoothness</label>
         <input id="tuneFeather" type="range" min="0" max="150" step="1" value="80" />
         <code id="tuneFeatherVal">80px</code>
 
         <label for="tuneMarkFade">Mark fade</label>
-        <input id="tuneMarkFade" type="range" min="50" max="600" step="10" value="250" />
-        <code id="tuneMarkFadeVal">250ms</code>
+        <input id="tuneMarkFade" type="range" min="50" max="600" step="10" value="310" />
+        <code id="tuneMarkFadeVal">310ms</code>
       </div>
 
       <div id="quizSummary" class="quiz-summary" hidden>
