@@ -27,6 +27,7 @@ Visual and interaction design of the demo: tab layout, the V1/V2/Quiz mode switc
 | 2026-05-16 | Tune panel initially had each slider's label and value on separate rows. | Took 4× the vertical space and made the modal balloon past comfortable height. Compressed to a 3-column grid (label / slider / value). |
 | 2026-05-16 | Wet-drop splash anchored at the SVG's origin (default `transform-origin: 0 0`). | Splash visibly scaled from the top-left corner instead of the brush touchdown point. Pinned `transform-origin` to `wetDropX/Y px` in JS so it lands where the brush would have hit. |
 | 2026-05-16 | Random center dots inside the ensō (carried over from V1 nostalgia). | User explicitly asked to remove them — they competed for attention with the lobes and weren't part of the V2 design language. Block deleted. |
+| 2026-05-16 | Multiple iterations on "the ring should appear to be drawn organically, like a brush". | After 4+ attempts (radial wedge clip, soft-mask wedge, global bloomRing, stroke-dashoffset on spine), the ring still doesn't read as "being drawn" — it reads as "fading in" or "appearing all at once" or "wave with no apparent gesture", depending on parameter values. User has tested every slider combination at 0 and max. **The intended UX (organic brush-drawn ring) remains unachieved.** This is a structural/technical problem the team has parked; documented in `_index.md` Open Questions and `dev.md`/`arch.md` Dead Ends. |
 
 ## Lessons
 - A floating modal that's translucent + has `backdrop-filter: blur()` lets you put controls ON TOP of the artwork without occluding it. Used here for the keypad, but it generalises to any review-art interface.
@@ -48,4 +49,5 @@ Blocked by: [[dev]] (visual ideas need implementation)
 Feeds into: [[pm]] (UX shapes player perception)
 
 ## Session Log
+- 2026-05-16 (evening) — Spent ~3h iterating on the ring reveal animation; technique replaced twice; **target UX (organic brush-drawn ring) is still not achieved**. Parked. Outside-help query drafted in `_index.md`.
 - 2026-05-16 — Floating modal, Tune panel (6 sliders), Vars drawer all committed. Soft-edge sweep mask resolved the geometric-line artifact at the leading edge.
