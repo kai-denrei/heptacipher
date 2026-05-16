@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=c1eebda1" />
+  <link rel="manifest" href="manifest.webmanifest?v=5b09eece" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=c1eebda1" />
+  <link rel="apple-touch-icon" href="icon.svg?v=5b09eece" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
@@ -22,9 +22,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="c1eebda1" />
-  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/01.svg?v=c1eebda1" />
-  <script src="public/cb-badge.js?v=c1eebda1" defer></script>
+  <meta name="cb" content="5b09eece" />
+  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/27.svg?v=5b09eece" />
+  <script src="public/cb-badge.js?v=5b09eece" defer></script>
 
   <style>
     :root {
@@ -39,11 +39,11 @@
          (NB: scaled with speed in the animation rules so it stays proportional
          and never pokes the crisp layer past the quadrant boundary),
          200ms per-mark stride, 30px sweep-mask feather. */
-      --quiz-anim-scale: 3;
-      --quiz-anim-blur: 2;
-      --quiz-anim-overshoot: 0;
-      --quiz-anim-stagger: 30ms;
-      --quiz-mark-stride: 200ms;
+      --quiz-anim-scale: 0.40;
+      --quiz-anim-blur: 2.5;
+      --quiz-anim-overshoot: 1.35;
+      --quiz-anim-stagger: 145ms;
+      --quiz-mark-stride: 20ms;
       /* Smoothness = the spatial fade-zone width on the mask's leading edge.
          Wider value = each position on the ring takes longer to transition
          from invisible to fully visible as the brush passes — reads as a
@@ -57,7 +57,7 @@
          Solving: sweep_duration = lobe_duration × 4 / body_frac.
          Using body_frac ≈ 0.937: sweep factor = 4 / 0.937 = 4.27.
          JS uses the actual per-render body_frac for the sweep itself. */
-      --quiz-bloom-mark-dur: 250ms;
+      --quiz-bloom-mark-dur: 310ms;
       --quiz-lobe-duration: calc(var(--quiz-bloom-mark-dur) + 4 * var(--quiz-mark-stride));
       --quiz-quadrant-time: var(--quiz-lobe-duration);
       --quiz-sweep-factor: 4.27;
@@ -85,9 +85,17 @@
     .stage {
       flex: 1 1 0;
       min-height: 0;
-      padding: 0;
+      /* Bottom padding reserves space for the bottom-center keypad modal
+         (≈ 280px tall on phones) so the SVG never paints behind it. The
+         SVG inside uses max-height: 100% which honours this padding. */
+      padding:
+        max(12px, env(safe-area-inset-top))
+        max(12px, env(safe-area-inset-right))
+        max(290px, calc(290px + env(safe-area-inset-bottom)))
+        max(12px, env(safe-area-inset-left));
       display: flex;
-      align-items: center;
+      /* Glyph anchored to top-center. */
+      align-items: flex-start;
       justify-content: center;
       position: relative;
       overflow: hidden;
@@ -112,8 +120,11 @@
       height: auto;
     }
 
-    /* ====== Quiz modal (floating top-left, translucent) ====== */
-    .quiz-modal {
+    /* ====== Two floating modals ======
+       Info modal (top-left): round/score + instruction/feedback + admin
+       controls (when ?admin). Keypad modal (bottom-center): input display
+       + 3×4 number pad. Both are translucent over the glyph stage. */
+    .quiz-info-modal {
       position: absolute;
       top: max(8px, env(safe-area-inset-top));
       left: max(8px, env(safe-area-inset-left));
@@ -132,6 +143,25 @@
       width: max-content;
       max-width: calc(100vw - 16px);
     }
+    .quiz-keypad-modal {
+      position: fixed;
+      left: 50%;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      background: rgba(251, 247, 238, 0.92);
+      backdrop-filter: blur(10px) saturate(1.15);
+      -webkit-backdrop-filter: blur(10px) saturate(1.15);
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      border-radius: 12px;
+      box-shadow: 0 -8px 24px -10px rgba(0, 0, 0, 0.28),
+                  0 -2px 5px  -2px rgba(0, 0, 0, 0.12);
+      max-width: calc(100vw - 16px);
+    }
     .quiz-progress {
       display: flex;
       justify-content: space-between;
@@ -144,25 +174,29 @@
     }
     .quiz-progress strong { color: var(--ink); font-weight: 700; font-size: 12px; }
     .quiz-input {
-      font: 700 22px/1 ui-monospace, monospace;
-      letter-spacing: 0.18em;
+      font: 700 30px/1 ui-monospace, monospace;
+      letter-spacing: 0.22em;
       color: var(--ink);
-      padding: 1px 0 2px;
+      padding: 2px 0 4px;
+      text-align: center;
     }
     .quiz-input .pending { color: var(--muted); opacity: 0.45; }
+    /* Keypad: ≥44px touch targets per Apple HIG; comfortable on phones
+       in portrait. 3 cols × 56px = 168px plus gaps. */
     .quiz-keypad {
       display: grid;
-      grid-template-columns: repeat(3, 36px);
-      grid-auto-rows: 28px;
-      gap: 3px;
+      grid-template-columns: repeat(3, 56px);
+      grid-auto-rows: 48px;
+      gap: 6px;
+      justify-content: center;
     }
     .quiz-keypad button {
-      font: 600 13px/1 ui-monospace, monospace;
+      font: 600 20px/1 ui-monospace, monospace;
       padding: 0;
-      background: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.7);
       color: var(--ink);
       border: 1px solid rgba(0, 0, 0, 0.18);
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       transition: background 80ms, transform 60ms;
       touch-action: manipulation;
@@ -170,19 +204,19 @@
     }
     .quiz-keypad button:active:not(:disabled) { background: rgba(0, 0, 0, 0.1); transform: translateY(1px); }
     .quiz-keypad button:disabled { opacity: 0.35; cursor: not-allowed; }
-    .quiz-keypad button.back { color: var(--accent); font-size: 11px; }
+    .quiz-keypad button.back { color: var(--accent); font-size: 16px; }
     @media (hover: hover) {
       .quiz-keypad button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.05); }
     }
     .quiz-feedback {
-      font-size: 11px;
+      font-size: 12px;
       min-height: 14px;
       color: var(--muted);
       font-style: italic;
-      line-height: 1.3;
-      max-width: 132px;
+      line-height: 1.35;
+      max-width: 200px;
     }
-    .quiz-feedback.correct { color: #b88800; font-style: normal; font-weight: 600; }
+    .quiz-feedback.correct { color: #1d8888; font-style: normal; font-weight: 600; }
     .quiz-feedback.wrong   { color: var(--accent); font-style: normal; font-weight: 600; }
 
     .quiz-summary {
@@ -280,10 +314,11 @@
     .vars-drawer label { display: block; margin: 4px 0; font-size: 13px; }
     .vars-drawer .row { display: flex; gap: 6px; align-items: center; }
 
-    /* Deeplink button — top-right, always visible. Clicking adds ?admin
-       to the URL so the admin panel becomes accessible. Subtle so it
-       doesn't dominate the public view. */
-    .deeplink {
+    /* Deeplink button — formerly top-right entry into admin mode.
+       Hidden by request so the public view has no visible affordance;
+       admin access is via the `?admin` URL param only. */
+    .deeplink { display: none !important; }
+    .deeplink-legacy {
       position: fixed;
       top: max(8px, env(safe-area-inset-top));
       right: max(8px, env(safe-area-inset-right));
@@ -365,19 +400,30 @@
       }
     }
 
-    /* Glow on guess result. */
+    /* Glow on guess result. Correct = teal, wrong = dark red + slight shake. */
     @keyframes quizGlowCorrect {
       0%   { filter: drop-shadow(0 0 0 transparent); }
-      30%  { filter: drop-shadow(0 0 28px #f5dd4b) drop-shadow(0 0 56px #f5dd4b); }
-      100% { filter: drop-shadow(0 0 18px #f5dd4b) drop-shadow(0 0 40px rgba(245,221,75,0.6)); }
+      30%  { filter: drop-shadow(0 0 28px #2ec5c5) drop-shadow(0 0 56px #2ec5c5); }
+      100% { filter: drop-shadow(0 0 18px #2ec5c5) drop-shadow(0 0 40px rgba(46,197,197,0.6)); }
     }
     @keyframes quizGlowWrong {
       0%   { filter: drop-shadow(0 0 0 transparent); opacity: 1; }
       25%  { filter: drop-shadow(0 0 26px #5a0a0a) drop-shadow(0 0 50px #5a0a0a); opacity: 1; }
       100% { filter: drop-shadow(0 0 0 transparent); opacity: 0; }
     }
+    @keyframes quizShake {
+      0%   { transform: translateX(0); }
+      10%  { transform: translateX(-8px); }
+      20%  { transform: translateX(7px); }
+      30%  { transform: translateX(-6px); }
+      40%  { transform: translateX(5px); }
+      55%  { transform: translateX(-3px); }
+      70%  { transform: translateX(2px); }
+      85%  { transform: translateX(-1px); }
+      100% { transform: translateX(0); }
+    }
     .svg-correct { animation: quizGlowCorrect 1.4s ease-out forwards; }
-    .svg-wrong   { animation: quizGlowWrong   1.3s ease-in  forwards; }
+    .svg-wrong   { animation: quizGlowWrong 1.3s ease-in forwards, quizShake 0.55s ease-out; }
   </style>
 </head>
 <body>
@@ -388,19 +434,10 @@
       <!-- SVG rendered here -->
     </section>
 
-    <aside class="quiz-modal" id="quizModal">
+    <aside class="quiz-info-modal" id="quizModal">
       <div class="quiz-progress">
         <span>Round <strong id="quizRound">1</strong>/5</span>
         <span>Score <strong id="quizScore">0</strong></span>
-      </div>
-      <div class="quiz-input" id="quizInput">_ _ _ _</div>
-      <div class="quiz-keypad" id="quizKeypad">
-        <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
-        <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
-        <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
-        <button data-action="clear" class="back">clr</button>
-        <button data-d="0">0</button>
-        <button data-action="back" class="back">⌫</button>
       </div>
       <div class="quiz-feedback" id="quizFeedback">Read the ink, tap the number.</div>
 
@@ -411,38 +448,50 @@
       </div>
       <div class="quiz-tune-panel admin-only" id="quizTunePanel" hidden>
         <label for="tuneSpeed">Speed</label>
-        <input id="tuneSpeed" type="range" min="0.4" max="5" step="0.05" value="3" />
-        <code id="tuneSpeedVal">3.00×</code>
+        <input id="tuneSpeed" type="range" min="0.4" max="5" step="0.05" value="0.4" />
+        <code id="tuneSpeedVal">0.40×</code>
 
         <label for="tuneBokeh">Bokeh</label>
-        <input id="tuneBokeh" type="range" min="0" max="2.5" step="0.05" value="2" />
-        <code id="tuneBokehVal">2.00×</code>
+        <input id="tuneBokeh" type="range" min="0" max="2.5" step="0.05" value="2.5" />
+        <code id="tuneBokehVal">2.50×</code>
 
         <label for="tuneBounce">Bounce</label>
-        <input id="tuneBounce" type="range" min="0" max="2" step="0.05" value="0" />
-        <code id="tuneBounceVal">0.00×</code>
+        <input id="tuneBounce" type="range" min="0" max="2" step="0.05" value="1.35" />
+        <code id="tuneBounceVal">1.35×</code>
 
         <label for="tuneStagger">Stagger</label>
-        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="30" />
-        <code id="tuneStaggerVal">30ms</code>
+        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="145" />
+        <code id="tuneStaggerVal">145ms</code>
 
         <label for="tuneStride">Stride</label>
-        <input id="tuneStride" type="range" min="0" max="400" step="5" value="200" />
-        <code id="tuneStrideVal">200ms</code>
+        <input id="tuneStride" type="range" min="0" max="400" step="5" value="20" />
+        <code id="tuneStrideVal">20ms</code>
 
         <label for="tuneFeather">Smoothness</label>
         <input id="tuneFeather" type="range" min="0" max="150" step="1" value="80" />
         <code id="tuneFeatherVal">80px</code>
 
         <label for="tuneMarkFade">Mark fade</label>
-        <input id="tuneMarkFade" type="range" min="50" max="600" step="10" value="250" />
-        <code id="tuneMarkFadeVal">250ms</code>
+        <input id="tuneMarkFade" type="range" min="50" max="600" step="10" value="310" />
+        <code id="tuneMarkFadeVal">310ms</code>
       </div>
 
       <div id="quizSummary" class="quiz-summary" hidden>
         <div class="quiz-summary-label">You scored</div>
         <div class="score"><span id="quizFinalScore">0</span> / 5</div>
         <button id="quizPlayAgain">Play again</button>
+      </div>
+    </aside>
+
+    <aside class="quiz-keypad-modal" id="quizKeypadModal">
+      <div class="quiz-input" id="quizInput">_ _ _ _</div>
+      <div class="quiz-keypad" id="quizKeypad">
+        <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
+        <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
+        <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
+        <button data-action="clear" class="back">clr</button>
+        <button data-d="0">0</button>
+        <button data-action="back" class="back">⌫</button>
       </div>
     </aside>
 
@@ -650,7 +699,7 @@
       const svg = renderHeptapodNumeralV2({
         number: quiz.answer,
         encoding: 'morse',
-        size: 480,
+        size: 600,
         seed: quiz.seed,
         ...currentParams(),
       });
