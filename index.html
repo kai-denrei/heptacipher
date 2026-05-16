@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>heptacipher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- PWA: installable + offline-capable. -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#161310" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="heptacipher" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- cache-busting (token bumped by ./scripts/bust.sh) -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="cb" content="0d934fe5" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+
+  <style>
+    :root {
+      --bg: #f6f1e7;
+      --paper: #fbf7ee;
+      --ink: #161310;
+      --accent: #8a3a2b;
+      --muted: #8a847a;
+
+      /* Quiz reveal animation knobs. All tunable in the admin panel.
+         Defaults: speed 3×, bokeh 2×, no bounce, 160ms halo→crisp stagger,
+         200ms per-mark stride, 30px sweep-mask feather. */
+      --quiz-anim-scale: 3;
+      --quiz-anim-blur: 2;
+      --quiz-anim-overshoot: 0;
+      --quiz-anim-stagger: 160ms;
+      --quiz-mark-stride: 200ms;
+      --quiz-sweep-feather: 30;
+
+      /* Derived: each lobe takes bloom_duration + 4*stride. The sweep is
+         then auto-balanced so the LAST mark of N4 finishes at the exact
+         moment the body sweep finishes drawing C4. The CSS computes the
+         per-lobe start delay; the JS reads --quiz-lobe-duration to set the
+         rAF sweep duration to match. */
+      --quiz-bloom-mark-dur: 250ms;
+      --quiz-lobe-duration: calc(var(--quiz-bloom-mark-dur) + 4 * var(--quiz-mark-stride));
+      /* 1 / (1 - 3*body_frac/4) where body_frac ≈ 0.937. The constant
+         3.367 (= 1/0.297) and the quadrant fraction 0.234 (= 0.937/4) are
+         baked in; JS uses the actual body_frac for the sweep itself. */
+      --quiz-quadrant-time: calc(var(--quiz-lobe-duration) * 0.788);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-serif, Georgia, "Times New Roman", serif;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .app {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .stage {
+      flex: 1 1 0;
+      min-height: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: var(--paper);
+    }
+    /* Subtle paper-grain noise behind the glyph. */
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.75;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch' seed='3'/><feColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.22 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    }
+    .stage > * { position: relative; }
+    .stage svg {
+      color: var(--ink);
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+    }
+
+    /* ====== Quiz modal (floating top-left, translucent) ====== */
+    .quiz-modal {
+      position: absolute;
+      top: max(8px, env(safe-area-inset-top));
+      left: max(8px, env(safe-area-inset-left));
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 9px 11px 10px;
+      background: rgba(251, 247, 238, 0.86);
+      backdrop-filter: blur(10px) saturate(1.15);
+      -webkit-backdrop-filter: blur(10px) saturate(1.15);
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.28),
+                  0 2px 5px  -2px rgba(0, 0, 0, 0.12);
+      width: max-content;
+      max-width: calc(100vw - 16px);
+    }
+    .quiz-progress {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .quiz-progress strong { color: var(--ink); font-weight: 700; font-size: 12px; }
+    .quiz-input {
+      font: 700 22px/1 ui-monospace, monospace;
+      letter-spacing: 0.18em;
+      color: var(--ink);
+      padding: 1px 0 2px;
+    }
+    .quiz-input .pending { color: var(--muted); opacity: 0.45; }
+    .quiz-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 36px);
+      grid-auto-rows: 28px;
+      gap: 3px;
+    }
+    .quiz-keypad button {
+      font: 600 13px/1 ui-monospace, monospace;
+      padding: 0;
+      background: rgba(255, 255, 255, 0.6);
+      color: var(--ink);
+      border: 1px solid rgba(0, 0, 0, 0.18);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 80ms, transform 60ms;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .quiz-keypad button:active:not(:disabled) { background: rgba(0, 0, 0, 0.1); transform: translateY(1px); }
+    .quiz-keypad button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .quiz-keypad button.back { color: var(--accent); font-size: 11px; }
+    @media (hover: hover) {
+      .quiz-keypad button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.05); }
+    }
+    .quiz-feedback {
+      font-size: 11px;
+      min-height: 14px;
+      color: var(--muted);
+      font-style: italic;
+      line-height: 1.3;
+      max-width: 132px;
+    }
+    .quiz-feedback.correct { color: #b88800; font-style: normal; font-weight: 600; }
+    .quiz-feedback.wrong   { color: var(--accent); font-style: normal; font-weight: 600; }
+
+    .quiz-summary {
+      text-align: center;
+      padding: 6px 4px 4px;
+    }
+    .quiz-summary-label { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+    .quiz-summary .score {
+      font: 700 32px/1 ui-serif, Georgia, serif;
+      color: var(--ink);
+      margin: 4px 0 8px;
+    }
+    .quiz-summary button {
+      font: 600 12px/1 ui-serif, Georgia, serif;
+      padding: 8px 14px;
+      background: var(--ink);
+      color: var(--paper);
+      border: 1px solid var(--ink);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .quiz-summary button:hover { background: var(--accent); border-color: var(--accent); }
+
+    /* ====== Admin-only controls ====== */
+    body:not(.admin) .admin-only { display: none !important; }
+
+    .quiz-admin-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 2px;
+    }
+    .quiz-admin-row button {
+      flex: 1;
+      font: 600 10px/1 ui-monospace, monospace;
+      padding: 5px 0;
+      background: rgba(255,255,255,0.6);
+      color: var(--ink);
+      border: 1px solid rgba(0,0,0,0.18);
+      border-radius: 3px;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .quiz-admin-row button:active { background: rgba(0,0,0,0.08); transform: translateY(1px); }
+
+    .quiz-tune-panel {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 2px 6px;
+      align-items: center;
+      padding-top: 4px;
+      border-top: 1px dashed rgba(0,0,0,0.18);
+      margin-top: 4px;
+    }
+    .quiz-tune-panel[hidden] { display: none; }
+    .quiz-tune-panel label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .quiz-tune-panel input[type=range] { width: 78px; height: 14px; margin: 0; padding: 0; }
+    .quiz-tune-panel code { font-size: 10px; min-width: 32px; text-align: right; color: var(--ink); }
+
+    /* Vars drawer — slides in from the right when admin opens it. */
+    .vars-drawer {
+      position: fixed;
+      top: max(8px, env(safe-area-inset-top));
+      right: 0;
+      bottom: 0;
+      width: min(320px, 65vw);
+      padding: 10px 12px max(12px, env(safe-area-inset-bottom));
+      gap: 10px;
+      background: rgba(251, 247, 238, 0.94);
+      -webkit-backdrop-filter: blur(12px) saturate(1.1);
+      backdrop-filter: blur(12px) saturate(1.1);
+      border-left: 1px solid rgba(0, 0, 0, 0.14);
+      box-shadow: -8px 0 24px -10px rgba(0, 0, 0, 0.28);
+      overflow-y: auto;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+    }
+    .vars-drawer[hidden] { display: none; }
+    .vars-drawer fieldset {
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 4px;
+      padding: 8px 10px 10px;
+      margin: 0 0 10px 0;
+    }
+    .vars-drawer legend {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 6px;
+    }
+    .vars-drawer label { display: block; margin: 4px 0; font-size: 13px; }
+    .vars-drawer .row { display: flex; gap: 6px; align-items: center; }
+
+    /* Deeplink button — top-right, always visible. Clicking adds ?admin
+       to the URL so the admin panel becomes accessible. Subtle so it
+       doesn't dominate the public view. */
+    .deeplink {
+      position: fixed;
+      top: max(8px, env(safe-area-inset-top));
+      right: max(8px, env(safe-area-inset-right));
+      z-index: 30;
+      padding: 4px 8px;
+      font: 500 10px/1 ui-monospace, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: rgba(251,247,238,0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(0,0,0,0.1);
+      border-radius: 3px;
+      cursor: pointer;
+      text-decoration: none;
+      opacity: 0.7;
+      transition: opacity 120ms, color 120ms;
+    }
+    .deeplink:hover { opacity: 1; color: var(--ink); }
+    body.admin .deeplink::after { content: " · ON"; color: var(--accent); }
+
+    /* ====== Bloom-and-settle reveal ====== */
+    @keyframes bloomDrop {
+      0%   { opacity: 0; transform: scale(0.30);                                          filter: blur(calc(6px * var(--quiz-anim-blur))); }
+      40%  { opacity: 1; transform: scale(calc(1 + 0.25 * var(--quiz-anim-overshoot)));   filter: blur(calc(2px * var(--quiz-anim-blur))); }
+      100% { opacity: 1; transform: scale(1);                                             filter: blur(0); }
+    }
+    @keyframes bloomRing {
+      0%   { opacity: 0;   filter: blur(calc(10px * var(--quiz-anim-blur))); }
+      60%  { opacity: 0.8; filter: blur(calc(3px  * var(--quiz-anim-blur))); }
+      100% { opacity: 1;   filter: blur(0); }
+    }
+    @keyframes bloomMark {
+      0%   { opacity: 0; transform: scale(calc(1 + 0.30 * var(--quiz-anim-overshoot))); filter: blur(calc(5px * var(--quiz-anim-blur))); }
+      100% { opacity: 1; transform: scale(1);                                           filter: blur(0); }
+    }
+
+    .quiz-anim g.wet-drop,
+    .quiz-anim g.appendage > path {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    /* Wet-drop splash. */
+    .quiz-anim g.ink-halo  > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) 0ms                          cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+    .quiz-anim g.ink-crisp > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) var(--quiz-anim-stagger)     cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+    /* Ensō body + tail. Bloom (opacity + blur) is the CSS layer; the clockwise
+       reveal is driven by a soft-edge mask animated in JS (sweepEnsoBody).
+       The animation duration MATCHES the JS sweep duration so the two stay
+       in sync — both derive from --quiz-lobe-duration via the same formula. */
+    .quiz-anim g.ink-halo  > g.enso      { animation: bloomRing calc(var(--quiz-lobe-duration) * 3.367 * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale))                            cubic-bezier(0.215, 0.610, 0.355, 1) both; }
+    .quiz-anim g.ink-crisp > g.enso      { animation: bloomRing calc(var(--quiz-lobe-duration) * 3.367 * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale) + var(--quiz-anim-stagger)) cubic-bezier(0.215, 0.610, 0.355, 1) both; }
+
+    /* Per-lobe index drives the bloom start time. lobe-start = 280ms +
+       lobe_idx * quadrant_time, where quadrant_time is auto-derived from
+       lobe duration. CSS does the math so adjusting the Stride slider
+       retimes everything live. */
+    .quiz-anim g.appendages > g.appendage:nth-child(1) { --lobe-idx: 0; }
+    .quiz-anim g.appendages > g.appendage:nth-child(2) { --lobe-idx: 1; }
+    .quiz-anim g.appendages > g.appendage:nth-child(3) { --lobe-idx: 2; }
+    .quiz-anim g.appendages > g.appendage:nth-child(4) { --lobe-idx: 3; }
+    .quiz-anim g.appendage { --lobe-start: calc(280ms + var(--lobe-idx) * var(--quiz-quadrant-time)); }
+
+    /* Per-mark stride. */
+    .quiz-anim g.appendage > path:nth-child(1) { --mark-i: 0; }
+    .quiz-anim g.appendage > path:nth-child(2) { --mark-i: 1; }
+    .quiz-anim g.appendage > path:nth-child(3) { --mark-i: 2; }
+    .quiz-anim g.appendage > path:nth-child(4) { --mark-i: 3; }
+    .quiz-anim g.appendage > path:nth-child(5) { --mark-i: 4; }
+
+    .quiz-anim g.ink-halo  > g.appendages g.appendage > path {
+      animation: bloomMark calc(var(--quiz-bloom-mark-dur) * var(--quiz-anim-scale))
+                 calc((var(--lobe-start) + var(--mark-i) * var(--quiz-mark-stride)) * var(--quiz-anim-scale))
+                 cubic-bezier(0.215, 0.610, 0.355, 1) both;
+    }
+    .quiz-anim g.ink-crisp > g.appendages g.appendage > path {
+      animation: bloomMark calc(var(--quiz-bloom-mark-dur) * var(--quiz-anim-scale))
+                 calc((var(--lobe-start) + var(--mark-i) * var(--quiz-mark-stride)) * var(--quiz-anim-scale) + var(--quiz-anim-stagger))
+                 cubic-bezier(0.215, 0.610, 0.355, 1) both;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .quiz-anim g.wet-drop,
+      .quiz-anim g.enso,
+      .quiz-anim g.appendage > path {
+        animation: none !important;
+      }
+    }
+
+    /* Glow on guess result. */
+    @keyframes quizGlowCorrect {
+      0%   { filter: drop-shadow(0 0 0 transparent); }
+      30%  { filter: drop-shadow(0 0 28px #f5dd4b) drop-shadow(0 0 56px #f5dd4b); }
+      100% { filter: drop-shadow(0 0 18px #f5dd4b) drop-shadow(0 0 40px rgba(245,221,75,0.6)); }
+    }
+    @keyframes quizGlowWrong {
+      0%   { filter: drop-shadow(0 0 0 transparent); opacity: 1; }
+      25%  { filter: drop-shadow(0 0 26px #5a0a0a) drop-shadow(0 0 50px #5a0a0a); opacity: 1; }
+      100% { filter: drop-shadow(0 0 0 transparent); opacity: 0; }
+    }
+    .svg-correct { animation: quizGlowCorrect 1.4s ease-out forwards; }
+    .svg-wrong   { animation: quizGlowWrong   1.3s ease-in  forwards; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <a href="?admin" class="deeplink" id="deeplink">⚙ admin</a>
+
+    <section class="stage" id="stage">
+      <!-- SVG rendered here -->
+    </section>
+
+    <aside class="quiz-modal" id="quizModal">
+      <div class="quiz-progress">
+        <span>Round <strong id="quizRound">1</strong>/5</span>
+        <span>Score <strong id="quizScore">0</strong></span>
+      </div>
+      <div class="quiz-input" id="quizInput">_ _ _ _</div>
+      <div class="quiz-keypad" id="quizKeypad">
+        <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
+        <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
+        <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
+        <button data-action="clear" class="back">clr</button>
+        <button data-d="0">0</button>
+        <button data-action="back" class="back">⌫</button>
+      </div>
+      <div class="quiz-feedback" id="quizFeedback">Read the ink, tap the number.</div>
+
+      <div class="quiz-admin-row admin-only">
+        <button id="quizReplayBtn" type="button" title="Replay the bloom animation on the current glyph">↻ Replay</button>
+        <button id="quizTuneToggle" type="button" aria-expanded="false">Tune ▾</button>
+        <button id="quizVarsToggle" type="button" aria-expanded="false">Vars ▾</button>
+      </div>
+      <div class="quiz-tune-panel admin-only" id="quizTunePanel" hidden>
+        <label for="tuneSpeed">Speed</label>
+        <input id="tuneSpeed" type="range" min="0.4" max="5" step="0.05" value="3" />
+        <code id="tuneSpeedVal">3.00×</code>
+
+        <label for="tuneBokeh">Bokeh</label>
+        <input id="tuneBokeh" type="range" min="0" max="2.5" step="0.05" value="2" />
+        <code id="tuneBokehVal">2.00×</code>
+
+        <label for="tuneBounce">Bounce</label>
+        <input id="tuneBounce" type="range" min="0" max="2" step="0.05" value="0" />
+        <code id="tuneBounceVal">0.00×</code>
+
+        <label for="tuneStagger">Stagger</label>
+        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="160" />
+        <code id="tuneStaggerVal">160ms</code>
+
+        <label for="tuneStride">Stride</label>
+        <input id="tuneStride" type="range" min="0" max="400" step="5" value="200" />
+        <code id="tuneStrideVal">200ms</code>
+
+        <label for="tuneFeather">Feather</label>
+        <input id="tuneFeather" type="range" min="0" max="60" step="1" value="30" />
+        <code id="tuneFeatherVal">30px</code>
+      </div>
+
+      <div id="quizSummary" class="quiz-summary" hidden>
+        <div class="quiz-summary-label">You scored</div>
+        <div class="score"><span id="quizFinalScore">0</span> / 5</div>
+        <button id="quizPlayAgain">Play again</button>
+      </div>
+    </aside>
+
+    <aside class="vars-drawer admin-only" id="varsDrawer" hidden>
+      <fieldset>
+        <legend>V2 shape</legend>
+        <label>
+          <span class="row" style="justify-content:space-between">
+            <span>Lobe steepness</span>
+            <code id="bulgeVal" style="font-size:11px">0.35</code>
+          </span>
+          <input id="bulgeSlider" type="range" min="0.05" max="1.6" step="0.05" value="0.35" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Space between digits</span>
+            <code id="gapVal" style="font-size:11px">0.05</code>
+          </span>
+          <input id="gapSlider" type="range" min="0.02" max="0.18" step="0.01" value="0.05" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Mark spread within digit</span>
+            <code id="spreadVal" style="font-size:11px">0.88</code>
+          </span>
+          <input id="spreadSlider" type="range" min="0" max="1" step="0.02" value="0.88" style="width:100%" />
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>V2 ink</legend>
+        <label>
+          <span class="row" style="justify-content:space-between">
+            <span>Ink bleed</span>
+            <code id="bleedVal" style="font-size:11px">2.50</code>
+          </span>
+          <input id="bleedSlider" type="range" min="0" max="2.5" step="0.05" value="2.5" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Halo darkness</span>
+            <code id="haloVal" style="font-size:11px">1.60</code>
+          </span>
+          <input id="haloSlider" type="range" min="0" max="1.6" step="0.05" value="1.6" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Crisp ink opacity</span>
+            <code id="crispVal" style="font-size:11px">1.00</code>
+          </span>
+          <input id="crispSlider" type="range" min="0" max="1" step="0.02" value="1.0" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Liquid wobble</span>
+            <code id="wobbleVal" style="font-size:11px">20.0</code>
+          </span>
+          <input id="wobbleSlider" type="range" min="0" max="20" step="0.5" value="20" style="width:100%" />
+        </label>
+        <label style="margin-top:8px">
+          <span class="row" style="justify-content:space-between">
+            <span>Wobble texture (coarse ← → fine)</span>
+            <code id="detailVal" style="font-size:11px">0.200</code>
+          </span>
+          <input id="detailSlider" type="range" min="0.01" max="0.20" step="0.005" value="0.20" style="width:100%" />
+        </label>
+      </fieldset>
+    </aside>
+  </div>
+
+  <script type="module">
+    // Service worker registration (PWA shell).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
+    }
+
+    // Cache-bust the entry module via the <meta name="cb"> token.
+    const cb = document.querySelector('meta[name="cb"]')?.content || String(Date.now());
+    const { renderHeptapodNumeralV2 } = await import(`./src/index.js?v=${cb}`);
+
+    // ============================================================
+    //  Admin gating
+    // ============================================================
+    // Public view shows only the logogram + keypad + Deeplink button.
+    // Adding ?admin to the URL toggles `body.admin`, which reveals the
+    // Tune/Vars buttons + the Replay button + the Vars drawer.
+    const isAdmin = new URLSearchParams(location.search).has('admin');
+    if (isAdmin) document.body.classList.add('admin');
+
+    // ============================================================
+    //  Render parameters
+    // ============================================================
+    const QUIZ_PARAMS_LOCKED = Object.freeze({
+      bulgeScale: 0.35,
+      digitGap: 0.05,
+      markSpread: 0.88,
+      bleedScale: 2.5,
+      haloOpacity: 1.6,
+      crispOpacity: 1.0,
+      liquidWobble: 20,
+      liquidDetail: 0.20,
+    });
+    // Live mirror — admin sliders write here, quiz reads here when varsOn.
+    const liveParams = { ...QUIZ_PARAMS_LOCKED };
+    let varsOn = false;
+
+    function currentParams() {
+      return varsOn ? liveParams : QUIZ_PARAMS_LOCKED;
+    }
+
+    // ============================================================
+    //  Quiz state
+    // ============================================================
+    const QUIZ_ROUNDS = 5;
+    const FEEDBACK_HOLD_CORRECT_MS = 1400;
+    const FEEDBACK_HOLD_WRONG_MS = 1300;
+
+    const quiz = {
+      round: 0,
+      score: 0,
+      answer: 0,
+      seed: 0,
+      typed: '',
+      awaiting: false,
+      cancelEnsoSweep: null,
+    };
+
+    // ============================================================
+    //  Element refs
+    // ============================================================
+    const stage = document.getElementById('stage');
+    const quizRoundEl = document.getElementById('quizRound');
+    const quizScoreEl = document.getElementById('quizScore');
+    const quizInputEl = document.getElementById('quizInput');
+    const quizFeedbackEl = document.getElementById('quizFeedback');
+    const quizKeypadEl = document.getElementById('quizKeypad');
+    const quizSummaryEl = document.getElementById('quizSummary');
+    const quizFinalScoreEl = document.getElementById('quizFinalScore');
+    const quizPlayAgainBtn = document.getElementById('quizPlayAgain');
+    const quizReplayBtn = document.getElementById('quizReplayBtn');
+    const quizTuneToggle = document.getElementById('quizTuneToggle');
+    const quizTunePanel = document.getElementById('quizTunePanel');
+    const quizVarsToggle = document.getElementById('quizVarsToggle');
+    const varsDrawer = document.getElementById('varsDrawer');
+    const deeplinkEl = document.getElementById('deeplink');
+
+    // Tune sliders
+    const tune = {
+      speed:    document.getElementById('tuneSpeed'),
+      speedVal: document.getElementById('tuneSpeedVal'),
+      bokeh:    document.getElementById('tuneBokeh'),
+      bokehVal: document.getElementById('tuneBokehVal'),
+      bounce:   document.getElementById('tuneBounce'),
+      bounceVal:document.getElementById('tuneBounceVal'),
+      stagger:  document.getElementById('tuneStagger'),
+      staggerVal:document.getElementById('tuneStaggerVal'),
+      stride:   document.getElementById('tuneStride'),
+      strideVal:document.getElementById('tuneStrideVal'),
+      feather:  document.getElementById('tuneFeather'),
+      featherVal:document.getElementById('tuneFeatherVal'),
+    };
+    // Vars sliders
+    const vars_ = {
+      bulge: document.getElementById('bulgeSlider'),    bulgeVal: document.getElementById('bulgeVal'),
+      gap: document.getElementById('gapSlider'),        gapVal: document.getElementById('gapVal'),
+      spread: document.getElementById('spreadSlider'),  spreadVal: document.getElementById('spreadVal'),
+      bleed: document.getElementById('bleedSlider'),    bleedVal: document.getElementById('bleedVal'),
+      halo: document.getElementById('haloSlider'),      haloVal: document.getElementById('haloVal'),
+      crisp: document.getElementById('crispSlider'),    crispVal: document.getElementById('crispVal'),
+      wobble: document.getElementById('wobbleSlider'),  wobbleVal: document.getElementById('wobbleVal'),
+      detail: document.getElementById('detailSlider'),  detailVal: document.getElementById('detailVal'),
+    };
+
+    // ============================================================
+    //  Ensō clockwise sweep (soft-edge SVG mask)
+    // ============================================================
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const SWEEP_START_MS = 280;
+
+    function getBaseSweepDurationMs(svg) {
+      // Read the CSS-computed lobe duration so this stays consistent with
+      // the bloom keyframes when the Stride slider moves. The duration is
+      // chosen so that the LAST mark of the LAST lobe (N4) finishes at the
+      // exact moment the body sweep finishes drawing C4 — see the formula
+      // in the :root comment.
+      const lobeDurStr = getComputedStyle(document.documentElement)
+        .getPropertyValue('--quiz-lobe-duration').trim() || '1050ms';
+      const lobeDur = parseFloat(lobeDurStr);
+      const bodySweep = Number(svg.dataset.bodySweepDeg);
+      const tailSweep = Number(svg.dataset.tailSweepDeg);
+      if (!isFinite(bodySweep) || !isFinite(tailSweep)) return lobeDur * 3.367;
+      const bodyFrac = bodySweep / (bodySweep + tailSweep);
+      // sweep_duration = lobe_duration / (1 - 3*body_frac/4)
+      return lobeDur / (1 - 3 * bodyFrac / 4);
+    }
+
+    function sweepEnsoBody(svg) {
+      const cx = Number(svg.dataset.cx);
+      const cy = Number(svg.dataset.cy);
+      const gapStartDeg = Number(svg.dataset.gapStartDeg);
+      const bodySweepDeg = Number(svg.dataset.bodySweepDeg);
+      const tailSweepDeg = Number(svg.dataset.tailSweepDeg);
+      const totalSweep = bodySweepDeg + tailSweepDeg;
+      const sizeAttr = Number(svg.getAttribute('width'));
+      const outerR = sizeAttr;
+
+      if (!isFinite(cx) || !isFinite(gapStartDeg) || !isFinite(totalSweep)) return () => {};
+
+      const scaleStr = getComputedStyle(document.documentElement)
+        .getPropertyValue('--quiz-anim-scale').trim() || '1';
+      const scale = Math.max(0.05, Number(scaleStr) || 1);
+      const startDelayMs = SWEEP_START_MS * scale;
+      const durationMs = getBaseSweepDurationMs(svg) * scale;
+
+      const featherStr = getComputedStyle(document.documentElement)
+        .getPropertyValue('--quiz-sweep-feather').trim() || '30';
+      const sizeScale = sizeAttr / 480;
+      const featherPx = (Number(featherStr) || 30) * sizeScale;
+
+      let defs = svg.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS(SVG_NS, 'defs');
+        svg.insertBefore(defs, svg.firstChild);
+      }
+      const idTag = Math.floor(Math.random() * 1e9).toString(36);
+      const maskId = `hc-mask-${idTag}`;
+      const filterId = `hc-blur-${idTag}`;
+
+      const filterEl = document.createElementNS(SVG_NS, 'filter');
+      filterEl.id = filterId;
+      filterEl.setAttribute('x', '-20%');
+      filterEl.setAttribute('y', '-20%');
+      filterEl.setAttribute('width', '140%');
+      filterEl.setAttribute('height', '140%');
+      const blurEl = document.createElementNS(SVG_NS, 'feGaussianBlur');
+      blurEl.setAttribute('stdDeviation', featherPx.toFixed(2));
+      filterEl.appendChild(blurEl);
+      defs.appendChild(filterEl);
+
+      const maskEl = document.createElementNS(SVG_NS, 'mask');
+      maskEl.id = maskId;
+      maskEl.setAttribute('maskUnits', 'userSpaceOnUse');
+      maskEl.setAttribute('maskContentUnits', 'userSpaceOnUse');
+      const polyEl = document.createElementNS(SVG_NS, 'polygon');
+      polyEl.setAttribute('fill', '#fff');
+      polyEl.setAttribute('filter', `url(#${filterId})`);
+      maskEl.appendChild(polyEl);
+      defs.appendChild(maskEl);
+
+      const ensoGroups = svg.querySelectorAll('g.enso');
+      ensoGroups.forEach((g) => g.setAttribute('mask', `url(#${maskId})`));
+
+      function buildPoints(arcDeg) {
+        const N = 72;
+        const pts = [`${cx},${cy}`];
+        for (let i = 0; i <= N; i++) {
+          const aRad = (gapStartDeg + arcDeg * (i / N)) * Math.PI / 180;
+          pts.push(`${(cx + outerR * Math.cos(aRad)).toFixed(1)},${(cy + outerR * Math.sin(aRad)).toFixed(1)}`);
+        }
+        return pts.join(' ');
+      }
+      polyEl.setAttribute('points', buildPoints(0));
+
+      let rafId = null;
+      let done = false;
+      const t0 = performance.now() + startDelayMs;
+
+      function tick(now) {
+        if (done) return;
+        const elapsed = now - t0;
+        if (elapsed < 0) { rafId = requestAnimationFrame(tick); return; }
+        const t = Math.min(1, elapsed / durationMs);
+        // LINEAR sweep — constant angular velocity, required for quadrant sync.
+        polyEl.setAttribute('points', buildPoints(totalSweep * t));
+        if (t < 1) rafId = requestAnimationFrame(tick);
+        else finalize();
+      }
+      function finalize() {
+        if (done) return;
+        done = true;
+        ensoGroups.forEach((g) => g.removeAttribute('mask'));
+        maskEl.remove();
+        filterEl.remove();
+      }
+      rafId = requestAnimationFrame(tick);
+
+      return function cancel({ reveal = true } = {}) {
+        if (rafId) cancelAnimationFrame(rafId);
+        if (reveal) finalize();
+        else {
+          done = true;
+          ensoGroups.forEach((g) => g.removeAttribute('mask'));
+          maskEl.remove();
+          filterEl.remove();
+        }
+      };
+    }
+
+    // ============================================================
+    //  Quiz controller
+    // ============================================================
+    function startQuiz() {
+      quiz.round = 0;
+      quiz.score = 0;
+      quiz.seed = (Math.random() * 0x1_0000_0000) | 0;
+      quizSummaryEl.hidden = true;
+      nextQuizRound();
+    }
+
+    function nextQuizRound() {
+      if (quiz.round >= QUIZ_ROUNDS) {
+        endQuiz();
+        return;
+      }
+      quiz.round++;
+      quiz.answer = Math.floor(Math.random() * 10000);
+      quiz.typed = '';
+      quiz.awaiting = false;
+      quizFeedbackEl.textContent = `Round ${quiz.round} — read the ink, tap the number.`;
+      quizFeedbackEl.classList.remove('correct', 'wrong');
+      renderQuiz();
+      updateQuizUI();
+    }
+
+    function renderQuiz({ animate = true } = {}) {
+      if (quiz.cancelEnsoSweep) {
+        quiz.cancelEnsoSweep({ reveal: false });
+        quiz.cancelEnsoSweep = null;
+      }
+      const svg = renderHeptapodNumeralV2({
+        number: quiz.answer,
+        encoding: 'morse',
+        size: 480,
+        seed: quiz.seed,
+        ...currentParams(),
+      });
+      if (animate) svg.classList.add('quiz-anim');
+      stage.replaceChildren(svg);
+      if (animate) quiz.cancelEnsoSweep = sweepEnsoBody(svg);
+    }
+
+    function updateQuizUI() {
+      quizRoundEl.textContent = String(quiz.round);
+      quizScoreEl.textContent = String(quiz.score);
+      const cells = [];
+      for (let i = 0; i < 4; i++) {
+        cells.push(i < quiz.typed.length ? quiz.typed[i] : '_');
+      }
+      const filledHTML = cells.slice(0, quiz.typed.length).join(' ');
+      const pendingHTML = cells.slice(quiz.typed.length).join(' ');
+      quizInputEl.innerHTML = filledHTML
+        + (filledHTML && pendingHTML ? ' ' : '')
+        + (pendingHTML ? `<span class="pending">${pendingHTML}</span>` : '');
+      [...quizKeypadEl.querySelectorAll('button')].forEach((b) => { b.disabled = quiz.awaiting; });
+    }
+
+    function quizKeypress(d) {
+      if (quiz.awaiting || quiz.typed.length >= 4) return;
+      quiz.typed += d;
+      updateQuizUI();
+      if (quiz.typed.length === 4) submitQuizGuess();
+    }
+    function quizBackspace() {
+      if (quiz.awaiting) return;
+      quiz.typed = quiz.typed.slice(0, -1);
+      updateQuizUI();
+    }
+    function quizClear() {
+      if (quiz.awaiting) return;
+      quiz.typed = '';
+      updateQuizUI();
+    }
+
+    function submitQuizGuess() {
+      quiz.awaiting = true;
+      updateQuizUI();
+      const guess = Number(quiz.typed);
+      const correct = guess === quiz.answer;
+      if (correct) quiz.score++;
+      const svg = stage.querySelector('svg');
+      if (svg) {
+        svg.classList.remove('quiz-anim');
+        if (quiz.cancelEnsoSweep) {
+          quiz.cancelEnsoSweep({ reveal: true });
+          quiz.cancelEnsoSweep = null;
+        }
+        svg.classList.add(correct ? 'svg-correct' : 'svg-wrong');
+      }
+      const answerStr = String(quiz.answer).padStart(4, '0');
+      quizFeedbackEl.textContent = correct
+        ? `✓ ${answerStr} — correct!`
+        : `✗ was ${answerStr}, you said ${quiz.typed}`;
+      quizFeedbackEl.classList.add(correct ? 'correct' : 'wrong');
+      quizScoreEl.textContent = String(quiz.score);
+      setTimeout(nextQuizRound, correct ? FEEDBACK_HOLD_CORRECT_MS : FEEDBACK_HOLD_WRONG_MS);
+    }
+
+    function endQuiz() {
+      if (quiz.cancelEnsoSweep) {
+        quiz.cancelEnsoSweep({ reveal: false });
+        quiz.cancelEnsoSweep = null;
+      }
+      stage.replaceChildren();
+      quizFeedbackEl.textContent = '';
+      quizFeedbackEl.classList.remove('correct', 'wrong');
+      quizFinalScoreEl.textContent = String(quiz.score);
+      quizSummaryEl.hidden = false;
+    }
+
+    // ============================================================
+    //  Tune (admin) — slider listeners
+    // ============================================================
+    function applyTune() {
+      const r = document.documentElement.style;
+      r.setProperty('--quiz-anim-scale',     String(Number(tune.speed.value)));
+      r.setProperty('--quiz-anim-blur',      String(Number(tune.bokeh.value)));
+      r.setProperty('--quiz-anim-overshoot', String(Number(tune.bounce.value)));
+      r.setProperty('--quiz-anim-stagger',   `${Number(tune.stagger.value)}ms`);
+      r.setProperty('--quiz-mark-stride',    `${Number(tune.stride.value)}ms`);
+      r.setProperty('--quiz-sweep-feather',  String(Number(tune.feather.value)));
+      tune.speedVal.textContent   = `${Number(tune.speed.value).toFixed(2)}×`;
+      tune.bokehVal.textContent   = `${Number(tune.bokeh.value).toFixed(2)}×`;
+      tune.bounceVal.textContent  = `${Number(tune.bounce.value).toFixed(2)}×`;
+      tune.staggerVal.textContent = `${tune.stagger.value}ms`;
+      tune.strideVal.textContent  = `${tune.stride.value}ms`;
+      tune.featherVal.textContent = `${tune.feather.value}px`;
+    }
+    Object.values(tune).filter((el) => el && el.tagName === 'INPUT').forEach((s) => s.addEventListener('input', applyTune));
+    applyTune();
+
+    // Vars (admin) — slider listeners
+    function applyVars() {
+      liveParams.bulgeScale   = Number(vars_.bulge.value);
+      liveParams.digitGap     = Number(vars_.gap.value);
+      liveParams.markSpread   = Number(vars_.spread.value);
+      liveParams.bleedScale   = Number(vars_.bleed.value);
+      liveParams.haloOpacity  = Number(vars_.halo.value);
+      liveParams.crispOpacity = Number(vars_.crisp.value);
+      liveParams.liquidWobble = Number(vars_.wobble.value);
+      liveParams.liquidDetail = Number(vars_.detail.value);
+      vars_.bulgeVal.textContent  = liveParams.bulgeScale.toFixed(2);
+      vars_.gapVal.textContent    = liveParams.digitGap.toFixed(2);
+      vars_.spreadVal.textContent = liveParams.markSpread.toFixed(2);
+      vars_.bleedVal.textContent  = liveParams.bleedScale.toFixed(2);
+      vars_.haloVal.textContent   = liveParams.haloOpacity.toFixed(2);
+      vars_.crispVal.textContent  = liveParams.crispOpacity.toFixed(2);
+      vars_.wobbleVal.textContent = liveParams.liquidWobble.toFixed(1);
+      vars_.detailVal.textContent = liveParams.liquidDetail.toFixed(3);
+      if (varsOn) renderQuiz({ animate: false });
+    }
+    Object.values(vars_).filter((el) => el && el.tagName === 'INPUT').forEach((s) => s.addEventListener('input', applyVars));
+
+    // Toggle button wiring
+    quizTuneToggle.addEventListener('click', () => {
+      const wasHidden = quizTunePanel.hidden;
+      quizTunePanel.hidden = !wasHidden;
+      quizTuneToggle.setAttribute('aria-expanded', String(wasHidden));
+      quizTuneToggle.textContent = wasHidden ? 'Tune ▴' : 'Tune ▾';
+    });
+    quizVarsToggle.addEventListener('click', () => {
+      varsOn = !varsOn;
+      varsDrawer.hidden = !varsOn;
+      quizVarsToggle.setAttribute('aria-expanded', String(varsOn));
+      quizVarsToggle.textContent = varsOn ? 'Vars ▴' : 'Vars ▾';
+      renderQuiz({ animate: varsOn });
+    });
+
+    // Replay button: re-fire the bloom on the current glyph.
+    quizReplayBtn.addEventListener('click', () => {
+      const svg = stage.querySelector('svg');
+      if (!svg) return;
+      if (quiz.cancelEnsoSweep) {
+        quiz.cancelEnsoSweep({ reveal: false });
+        quiz.cancelEnsoSweep = null;
+      }
+      svg.classList.remove('quiz-anim', 'svg-correct', 'svg-wrong');
+      void svg.getBoundingClientRect();
+      svg.classList.add('quiz-anim');
+      quiz.cancelEnsoSweep = sweepEnsoBody(svg);
+    });
+
+    // Keypad — click + physical-keyboard listeners.
+    quizKeypadEl.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.d != null) quizKeypress(btn.dataset.d);
+      else if (btn.dataset.action === 'back')  quizBackspace();
+      else if (btn.dataset.action === 'clear') quizClear();
+    });
+    window.addEventListener('keydown', (ev) => {
+      if (ev.key >= '0' && ev.key <= '9') quizKeypress(ev.key);
+      else if (ev.key === 'Backspace') { quizBackspace(); ev.preventDefault(); }
+      else if (ev.key === 'Escape') quizClear();
+    });
+
+    quizPlayAgainBtn.addEventListener('click', startQuiz);
+
+    // Deeplink button — clicking in admin mode flips back to public.
+    if (isAdmin) {
+      deeplinkEl.setAttribute('href', location.pathname);
+      deeplinkEl.firstChild.nodeValue = '⚙ exit admin';
+    }
+
+    // Start the first session.
+    startQuiz();
+  </script>
+</body>
+</html>

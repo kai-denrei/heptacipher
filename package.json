@@ -1,0 +1,46 @@
+{
+  "name": "heptacipher",
+  "version": "0.2.0",
+  "description": "A read-the-wet-ink-and-guess-the-number quiz. Procedural calligraphy renders a 4-digit number as a heptapod-style logogram (open ensō + four digit-encoding lobes); the player taps the answer on a keypad.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "index.html",
+    "manifest.webmanifest",
+    "sw.js",
+    "icon.svg",
+    "icon-maskable.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "demo": "python3 scripts/dev-server.py 8766",
+    "bust": "./scripts/bust.sh",
+    "test": "vitest run --environment happy-dom"
+  },
+  "keywords": [
+    "heptapod",
+    "arrival",
+    "logogram",
+    "calligraphy",
+    "enso",
+    "morse",
+    "puzzle",
+    "pwa",
+    "svg"
+  ],
+  "author": "Gerald (Jelaludo)",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kai-denrei/heptacipher"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.9.0",
+    "vitest": "^4.1.6"
+  }
+}
