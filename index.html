@@ -6,20 +6,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=7a6c15a9" />
+  <link rel="manifest" href="manifest.webmanifest?v=8a6ff8bf" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=7a6c15a9" />
+  <link rel="apple-touch-icon" href="icon.svg?v=8a6ff8bf" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
   <meta name="mobile-web-app-capable" content="yes" />
 
-  <!-- cache-busting (token bumped by ./scripts/bust.sh) -->
+  <!-- cache-busting (token bumped by ./scripts/bust.sh).
+       The favicon is one of 64 cb-shapes — the shape/colour rotates with
+       every bust so a glance at the browser tab tells you which build is
+       loaded. cb-badge.js draws the same shape as a corner widget for
+       in-app confirmation, visible in both public and admin views. -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="7a6c15a9" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=7a6c15a9" />
+  <meta name="cb" content="8a6ff8bf" />
+  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/10.svg?v=8a6ff8bf" />
+  <script src="public/cb-badge.js?v=8a6ff8bf" defer></script>
 
   <style>
     :root {
@@ -39,7 +44,11 @@
       --quiz-anim-overshoot: 0;
       --quiz-anim-stagger: 30ms;
       --quiz-mark-stride: 200ms;
-      --quiz-sweep-feather: 30;
+      /* Smoothness = the spatial fade-zone width on the mask's leading edge.
+         Wider value = each position on the ring takes longer to transition
+         from invisible to fully visible as the brush passes — reads as a
+         more organic, ink-spreading reveal. Unit is px @ size=480; scales. */
+      --quiz-sweep-feather: 80;
 
       /* Derived: each lobe Nn fits EXACTLY in its quadrant Cn — so when
          the brush finishes sweeping C4, the last mark of N4 lands at the
@@ -436,9 +445,13 @@
         <input id="tuneStride" type="range" min="0" max="400" step="5" value="200" />
         <code id="tuneStrideVal">200ms</code>
 
-        <label for="tuneFeather">Feather</label>
-        <input id="tuneFeather" type="range" min="0" max="60" step="1" value="30" />
-        <code id="tuneFeatherVal">30px</code>
+        <label for="tuneFeather">Smoothness</label>
+        <input id="tuneFeather" type="range" min="0" max="150" step="1" value="80" />
+        <code id="tuneFeatherVal">80px</code>
+
+        <label for="tuneMarkFade">Mark fade</label>
+        <input id="tuneMarkFade" type="range" min="50" max="600" step="10" value="250" />
+        <code id="tuneMarkFadeVal">250ms</code>
       </div>
 
       <div id="quizSummary" class="quiz-summary" hidden>
@@ -605,6 +618,8 @@
       strideVal:document.getElementById('tuneStrideVal'),
       feather:  document.getElementById('tuneFeather'),
       featherVal:document.getElementById('tuneFeatherVal'),
+      markFade: document.getElementById('tuneMarkFade'),
+      markFadeVal: document.getElementById('tuneMarkFadeVal'),
     };
     // Vars sliders
     const vars_ = {
@@ -864,12 +879,14 @@
       r.setProperty('--quiz-anim-stagger',   `${Number(tune.stagger.value)}ms`);
       r.setProperty('--quiz-mark-stride',    `${Number(tune.stride.value)}ms`);
       r.setProperty('--quiz-sweep-feather',  String(Number(tune.feather.value)));
-      tune.speedVal.textContent   = `${Number(tune.speed.value).toFixed(2)}×`;
-      tune.bokehVal.textContent   = `${Number(tune.bokeh.value).toFixed(2)}×`;
-      tune.bounceVal.textContent  = `${Number(tune.bounce.value).toFixed(2)}×`;
-      tune.staggerVal.textContent = `${tune.stagger.value}ms`;
-      tune.strideVal.textContent  = `${tune.stride.value}ms`;
-      tune.featherVal.textContent = `${tune.feather.value}px`;
+      r.setProperty('--quiz-bloom-mark-dur', `${Number(tune.markFade.value)}ms`);
+      tune.speedVal.textContent    = `${Number(tune.speed.value).toFixed(2)}×`;
+      tune.bokehVal.textContent    = `${Number(tune.bokeh.value).toFixed(2)}×`;
+      tune.bounceVal.textContent   = `${Number(tune.bounce.value).toFixed(2)}×`;
+      tune.staggerVal.textContent  = `${tune.stagger.value}ms`;
+      tune.strideVal.textContent   = `${tune.stride.value}ms`;
+      tune.featherVal.textContent  = `${tune.feather.value}px`;
+      tune.markFadeVal.textContent = `${tune.markFade.value}ms`;
     }
     Object.values(tune).filter((el) => el && el.tagName === 'INPUT').forEach((s) => s.addEventListener('input', applyTune));
     applyTune();
