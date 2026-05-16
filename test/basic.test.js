@@ -16,7 +16,10 @@ describe('renderHeptapodNumeralV2', () => {
 
     expect(svg).toBeTruthy();
     expect(svg.tagName.toLowerCase()).toBe('svg');
-    expect(svg.getAttribute('viewBox')).toBe('0 0 400 400');
+    // viewBox is padded 40% on each side so the wet halo has room to bleed
+    // past the drawing area without hitting a rectangular clip line. For
+    // size=400 the padded viewBox is -160 -160 720 720 (400 × 1.8 = 720).
+    expect(svg.getAttribute('viewBox')).toBe('-160 -160 720 720');
     expect(svg.dataset.number).toBe('3729');
     expect(svg.dataset.encoding).toBe('morse');
     expect(svg.dataset.variant).toBe('v2');

@@ -330,19 +330,26 @@ export function renderHeptapodNumeralV2({
   const turbSeedFar   = (rng.seed >>> 0) % 9973;
   const turbSeedNear  = ((rng.seed >>> 8) >>> 0) % 9973;
   const turbSeedCrisp = ((rng.seed >>> 16) >>> 0) % 9973;
+  // Filter region — generous margin so heavy bleed + displacement never gets
+  // clipped at the element bbox. With bleedScale=2.5 and liquidWobble=20, the
+  // halo extends ~90px past content; 200% / -50% offsets the bbox by half,
+  // which left only 50% headroom — too tight. 600% / -250% gives 2.5× bbox of
+  // headroom on every side. Combined with svg overflow="visible" and the
+  // padded viewBox below, the wet halo never hits a rectangular clip line.
+  const FILTER_BOUNDS = 'x="-250%" y="-250%" width="600%" height="600%"';
   const defs = `
     <defs>
-      <filter id="${filterFarId}" x="-50%" y="-50%" width="200%" height="200%">
+      <filter id="${filterFarId}" ${FILTER_BOUNDS}>
         <feGaussianBlur in="SourceGraphic" stdDeviation="${farStdDev.toFixed(2)}" result="blur" />
         <feTurbulence type="fractalNoise" baseFrequency="${detail.toFixed(4)}" numOctaves="2" seed="${turbSeedFar}" result="turb" />
         <feDisplacementMap in="blur" in2="turb" scale="${(wobblePx * 1.0).toFixed(2)}" />
       </filter>
-      <filter id="${filterNearId}" x="-50%" y="-50%" width="200%" height="200%">
+      <filter id="${filterNearId}" ${FILTER_BOUNDS}>
         <feGaussianBlur in="SourceGraphic" stdDeviation="${nearStdDev.toFixed(2)}" result="blur" />
         <feTurbulence type="fractalNoise" baseFrequency="${(detail * 1.4).toFixed(4)}" numOctaves="2" seed="${turbSeedNear}" result="turb" />
         <feDisplacementMap in="blur" in2="turb" scale="${(wobblePx * 0.65).toFixed(2)}" />
       </filter>
-      <filter id="${filterCrispId}" x="-50%" y="-50%" width="200%" height="200%">
+      <filter id="${filterCrispId}" ${FILTER_BOUNDS}>
         <feTurbulence type="fractalNoise" baseFrequency="${(detail * 1.8).toFixed(4)}" numOctaves="2" seed="${turbSeedCrisp}" result="turb" />
         <feDisplacementMap in="SourceGraphic" in2="turb" scale="${(wobblePx * 0.30).toFixed(2)}" />
       </filter>
@@ -359,11 +366,19 @@ export function renderHeptapodNumeralV2({
     `<g class="appendages">${appendageFragments.join('')}</g>`,
   ].join('');
 
+  // Padded viewBox — give the halo room to extend past the drawing area
+  // without hitting the SVG's rectangular clip. Content keeps its original
+  // cx/cy in the unpadded coord space; the viewBox grows around it.
+  // 40% padding on each side accommodates the heaviest bleed + wobble.
+  const VB_PAD_FRAC = 0.4;
+  const vbPad = size * VB_PAD_FRAC;
+  const vbSize = size + 2 * vbPad;
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('xmlns', SVG_NS);
-  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', `${-vbPad} ${-vbPad} ${vbSize} ${vbSize}`);
+  svg.setAttribute('width', String(vbSize));
+  svg.setAttribute('height', String(vbSize));
+  svg.setAttribute('overflow', 'visible');
   svg.setAttribute('fill', 'currentColor');
   svg.setAttribute('stroke', 'none');
   svg.dataset.number = String(number);
