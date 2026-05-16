@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=8a6ff8bf" />
+  <link rel="manifest" href="manifest.webmanifest?v=d8e376a8" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=8a6ff8bf" />
+  <link rel="apple-touch-icon" href="icon.svg?v=d8e376a8" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
@@ -22,9 +22,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="8a6ff8bf" />
-  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/10.svg?v=8a6ff8bf" />
-  <script src="public/cb-badge.js?v=8a6ff8bf" defer></script>
+  <meta name="cb" content="d8e376a8" />
+  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/24.svg?v=d8e376a8" />
+  <script src="public/cb-badge.js?v=d8e376a8" defer></script>
 
   <style>
     :root {
@@ -334,12 +334,10 @@
     .quiz-anim g.ink-halo  > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) 0ms                                                       cubic-bezier(0.34, 1.56, 0.64, 1) both; }
     .quiz-anim g.ink-crisp > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) calc(var(--quiz-anim-stagger) * var(--quiz-anim-scale))   cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
-    /* Ensō body + tail. The brush-drawn feel comes from the JS-driven
-       clockwise mask. The CSS bloom is a brief opacity+blur fade at the
-       start (NOT spanning the whole sweep) so the mask's motion is what
-       reads as "drawing the ring", not the global fade. */
-    .quiz-anim g.ink-halo  > g.enso      { animation: bloomRing calc(500ms * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale))                                                            cubic-bezier(0.215, 0.610, 0.355, 1) both; }
-    .quiz-anim g.ink-crisp > g.enso      { animation: bloomRing calc(500ms * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale) + var(--quiz-anim-stagger) * var(--quiz-anim-scale))        cubic-bezier(0.215, 0.610, 0.355, 1) both; }
+    /* Ensō body + tail. NO bloomRing — the ring has zero global opacity
+       ramp. Each position is truly invisible until the JS-driven mask
+       reveals it; the mask's soft leading edge (Smoothness slider) is
+       the ONLY mechanism for the per-position 0→1 transition. */
 
     /* Per-lobe index drives the bloom start time. lobe-start = 280ms +
        lobe_idx * quadrant_time, where quadrant_time is auto-derived from
