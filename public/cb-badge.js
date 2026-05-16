@@ -49,12 +49,12 @@
     "right:8px",
     "display:flex",
     "gap:2px",
-    "padding:4px 6px",
+    "padding:3px 5px",
     "background:#111",
     "border:1px solid #2a2a2a",
-    "border-radius:6px",
+    "border-radius:5px",
     "z-index:2147483647",
-    "font:11px ui-monospace,SFMono-Regular,Menlo,monospace",
+    "font:9px ui-monospace,SFMono-Regular,Menlo,monospace",
     "color:#888",
     "align-items:center",
     "user-select:none"
@@ -64,8 +64,8 @@
     const img = document.createElement("img");
     img.src = `${cellPrefix}${pad(c)}${cellExt}`;
     img.alt = "";
-    img.width = 20;
-    img.height = 20;
+    img.width = 14;
+    img.height = 14;
     img.style.cssText = "display:block;border-radius:2px";
     // If the chosen extension 404s, try the other one once (covers installs
     // where cb-shapes ship as svg-only or webp-only). Guarded so it can't
@@ -82,7 +82,7 @@
 
   const hexEl = document.createElement("span");
   hexEl.textContent = label ? `${hex} · ${label}` : hex;
-  hexEl.style.cssText = "margin-left:6px;color:#bbb";
+  hexEl.style.cssText = "margin-left:5px;color:#bbb";
   badge.appendChild(hexEl);
 
   // Click to copy the token.

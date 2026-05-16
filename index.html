@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=452ab066" />
+  <link rel="manifest" href="manifest.webmanifest?v=9f5fc76d" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=452ab066" />
+  <link rel="apple-touch-icon" href="icon.svg?v=9f5fc76d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
@@ -22,9 +22,9 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="452ab066" />
-  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/05.svg?v=452ab066" />
-  <script src="public/cb-badge.js?v=452ab066" defer></script>
+  <meta name="cb" content="9f5fc76d" />
+  <link rel="icon" type="image/svg+xml" href="public/cb-shapes/31.svg?v=9f5fc76d" />
+  <script src="public/cb-badge.js?v=9f5fc76d" defer></script>
 
   <style>
     :root {
@@ -89,10 +89,10 @@
          (≈ 280px tall on phones) so the SVG never paints behind it. The
          SVG inside uses max-height: 100% which honours this padding. */
       padding:
-        max(12px, env(safe-area-inset-top))
-        max(12px, env(safe-area-inset-right))
-        max(290px, calc(290px + env(safe-area-inset-bottom)))
-        max(12px, env(safe-area-inset-left));
+        max(8px, env(safe-area-inset-top))
+        max(8px, env(safe-area-inset-right))
+        max(305px, calc(305px + env(safe-area-inset-bottom)))
+        max(8px, env(safe-area-inset-left));
       display: flex;
       /* Glyph anchored to top-center. */
       align-items: flex-start;
@@ -146,7 +146,7 @@
     .quiz-keypad-modal {
       position: fixed;
       left: 50%;
-      bottom: max(10px, env(safe-area-inset-bottom));
+      bottom: max(22px, calc(22px + env(safe-area-inset-bottom)));
       transform: translateX(-50%);
       z-index: 10;
       display: flex;
@@ -173,6 +173,14 @@
       text-transform: uppercase;
     }
     .quiz-progress strong { color: var(--ink); font-weight: 700; font-size: 12px; }
+    .quiz-timer {
+      font: 500 9px/1 ui-monospace, monospace;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: none;
+      align-self: center;
+      font-variant-numeric: tabular-nums;
+    }
     .quiz-input {
       font: 700 30px/1 ui-monospace, monospace;
       letter-spacing: 0.22em;
@@ -437,6 +445,7 @@
     <aside class="quiz-info-modal" id="quizModal">
       <div class="quiz-progress">
         <span>Round <strong id="quizRound">1</strong>/5</span>
+        <span class="quiz-timer" id="quizTimer">0.0s</span>
         <span>Score <strong id="quizScore">0</strong></span>
       </div>
       <div class="quiz-feedback" id="quizFeedback">Read the ink, tap the number.</div>
@@ -624,6 +633,7 @@
     const stage = document.getElementById('stage');
     const quizRoundEl = document.getElementById('quizRound');
     const quizScoreEl = document.getElementById('quizScore');
+    const quizTimerEl = document.getElementById('quizTimer');
     const quizInputEl = document.getElementById('quizInput');
     const quizFeedbackEl = document.getElementById('quizFeedback');
     const quizKeypadEl = document.getElementById('quizKeypad');
@@ -667,6 +677,41 @@
     };
 
     // ============================================================
+    //  Session timer — cumulative across rounds. No penalty, just a
+    //  tally of total time. Starts when the ensō reveal animation
+    //  ends (animationend on the ensō .draw-spine), stops when the
+    //  user submits a guess, resumes on the next glyph's animationend,
+    //  and resets on startQuiz.
+    // ============================================================
+    let timerStart = null;        // performance.now() when current run started, or null if not running
+    let timerAccumulated = 0;     // ms accumulated from completed rounds
+    let timerInterval = null;     // setInterval id for live display
+
+    function startTimer() {
+      if (timerStart != null) return;
+      timerStart = performance.now();
+      if (!timerInterval) timerInterval = setInterval(updateTimerDisplay, 100);
+    }
+    function stopTimer() {
+      if (timerStart == null) return;
+      timerAccumulated += performance.now() - timerStart;
+      timerStart = null;
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      updateTimerDisplay();
+    }
+    function resetTimer() {
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      timerStart = null;
+      timerAccumulated = 0;
+      updateTimerDisplay();
+    }
+    function updateTimerDisplay() {
+      let total = timerAccumulated;
+      if (timerStart != null) total += performance.now() - timerStart;
+      quizTimerEl.textContent = `${(total / 1000).toFixed(1)}s`;
+    }
+
+    // ============================================================
     //  Quiz controller
     // ============================================================
     // Reveal is 100% CSS-driven now — each masked element has a
@@ -677,6 +722,7 @@
       quiz.score = 0;
       quiz.seed = (Math.random() * 0x1_0000_0000) | 0;
       quizSummaryEl.hidden = true;
+      resetTimer();
       nextQuizRound();
     }
 
@@ -705,6 +751,17 @@
       });
       if (animate) svg.classList.add('quiz-anim');
       stage.replaceChildren(svg);
+      // Start the round timer as soon as the ensō reveal completes
+      // (it's the longest-running animation). Only when animating —
+      // a non-animating render (Vars drag) shouldn't restart the timer.
+      if (animate) {
+        const ensoSpine = svg.querySelector('.draw-spine[data-element="enso"]');
+        if (ensoSpine) {
+          ensoSpine.addEventListener('animationend', () => {
+            if (!quiz.awaiting) startTimer();
+          }, { once: true });
+        }
+      }
     }
 
     function updateQuizUI() {
@@ -740,6 +797,7 @@
     }
 
     function submitQuizGuess() {
+      stopTimer();
       quiz.awaiting = true;
       updateQuizUI();
       const guess = Number(quiz.typed);

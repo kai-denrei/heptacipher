@@ -415,8 +415,11 @@ export function renderHeptapodNumeralV2({
   // Padded viewBox — give the halo room to extend past the drawing area
   // without hitting the SVG's rectangular clip. Content keeps its original
   // cx/cy in the unpadded coord space; the viewBox grows around it.
-  // 40% padding on each side accommodates the heaviest bleed + wobble.
-  const VB_PAD_FRAC = 0.4;
+  // 30% padding (was 0.4) — the SVG's filter has overflow="visible" plus
+  // 600% filter region, so the halo never clips. Smaller padding means
+  // the glyph fills more of the rendered SVG box → visually bigger glyph
+  // for the same stage area.
+  const VB_PAD_FRAC = 0.3;
   const vbPad = size * VB_PAD_FRAC;
   const vbSize = size + 2 * vbPad;
   const svg = document.createElementNS(SVG_NS, 'svg');
