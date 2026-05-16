@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <!-- PWA: installable + offline-capable. -->
-  <link rel="manifest" href="manifest.webmanifest?v=88f626f3" />
+  <link rel="manifest" href="manifest.webmanifest?v=7a6c15a9" />
   <meta name="theme-color" content="#161310" />
-  <link rel="apple-touch-icon" href="icon.svg?v=88f626f3" />
+  <link rel="apple-touch-icon" href="icon.svg?v=7a6c15a9" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="heptacipher" />
@@ -18,8 +18,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="cb" content="88f626f3" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=88f626f3" />
+  <meta name="cb" content="7a6c15a9" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=7a6c15a9" />
 
   <style>
     :root {
@@ -30,12 +30,14 @@
       --muted: #8a847a;
 
       /* Quiz reveal animation knobs. All tunable in the admin panel.
-         Defaults: speed 3×, bokeh 2×, no bounce, 160ms halo→crisp stagger,
+         Defaults: speed 3×, bokeh 2×, no bounce, 30ms halo→crisp stagger
+         (NB: scaled with speed in the animation rules so it stays proportional
+         and never pokes the crisp layer past the quadrant boundary),
          200ms per-mark stride, 30px sweep-mask feather. */
       --quiz-anim-scale: 3;
       --quiz-anim-blur: 2;
       --quiz-anim-overshoot: 0;
-      --quiz-anim-stagger: 160ms;
+      --quiz-anim-stagger: 30ms;
       --quiz-mark-stride: 200ms;
       --quiz-sweep-feather: 30;
 
@@ -317,15 +319,18 @@
       transform-origin: center;
     }
 
-    /* Wet-drop splash. */
-    .quiz-anim g.ink-halo  > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) 0ms                          cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-    .quiz-anim g.ink-crisp > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) var(--quiz-anim-stagger)     cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+    /* Wet-drop splash. Stagger is scaled by --quiz-anim-scale so the
+       halo→crisp capillary delay stays proportional to bloom — otherwise
+       at slow speeds the crisp would lag visibly behind. */
+    .quiz-anim g.ink-halo  > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) 0ms                                                       cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+    .quiz-anim g.ink-crisp > g.wet-drop  { animation: bloomDrop calc(380ms * var(--quiz-anim-scale)) calc(var(--quiz-anim-stagger) * var(--quiz-anim-scale))   cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 
-    /* Ensō body + tail. Bloom (opacity + blur) is the CSS layer; the clockwise
-       reveal is driven by a soft-edge mask animated in JS (sweepEnsoBody).
-       Both layers use the same lobe-derived duration so they stay locked. */
-    .quiz-anim g.ink-halo  > g.enso      { animation: bloomRing calc(var(--quiz-lobe-duration) * var(--quiz-sweep-factor) * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale))                            cubic-bezier(0.215, 0.610, 0.355, 1) both; }
-    .quiz-anim g.ink-crisp > g.enso      { animation: bloomRing calc(var(--quiz-lobe-duration) * var(--quiz-sweep-factor) * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale) + var(--quiz-anim-stagger)) cubic-bezier(0.215, 0.610, 0.355, 1) both; }
+    /* Ensō body + tail. The brush-drawn feel comes from the JS-driven
+       clockwise mask. The CSS bloom is a brief opacity+blur fade at the
+       start (NOT spanning the whole sweep) so the mask's motion is what
+       reads as "drawing the ring", not the global fade. */
+    .quiz-anim g.ink-halo  > g.enso      { animation: bloomRing calc(500ms * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale))                                                            cubic-bezier(0.215, 0.610, 0.355, 1) both; }
+    .quiz-anim g.ink-crisp > g.enso      { animation: bloomRing calc(500ms * var(--quiz-anim-scale)) calc(280ms * var(--quiz-anim-scale) + var(--quiz-anim-stagger) * var(--quiz-anim-scale))        cubic-bezier(0.215, 0.610, 0.355, 1) both; }
 
     /* Per-lobe index drives the bloom start time. lobe-start = 280ms +
        lobe_idx * quadrant_time, where quadrant_time is auto-derived from
@@ -349,9 +354,12 @@
                  calc((var(--lobe-start) + var(--mark-i) * var(--quiz-mark-stride)) * var(--quiz-anim-scale))
                  cubic-bezier(0.215, 0.610, 0.355, 1) both;
     }
+    /* Crisp marks get the stagger ALSO scaled — so the halo→crisp gap is a
+       proportional fraction of bloom, not a fixed-ms slip that leaves the
+       crisp last-mark hanging past the quadrant boundary. */
     .quiz-anim g.ink-crisp > g.appendages g.appendage > path {
       animation: bloomMark calc(var(--quiz-bloom-mark-dur) * var(--quiz-anim-scale))
-                 calc((var(--lobe-start) + var(--mark-i) * var(--quiz-mark-stride)) * var(--quiz-anim-scale) + var(--quiz-anim-stagger))
+                 calc((var(--lobe-start) + var(--mark-i) * var(--quiz-mark-stride)) * var(--quiz-anim-scale) + var(--quiz-anim-stagger) * var(--quiz-anim-scale))
                  cubic-bezier(0.215, 0.610, 0.355, 1) both;
     }
 
@@ -421,8 +429,8 @@
         <code id="tuneBounceVal">0.00×</code>
 
         <label for="tuneStagger">Stagger</label>
-        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="160" />
-        <code id="tuneStaggerVal">160ms</code>
+        <input id="tuneStagger" type="range" min="0" max="400" step="5" value="30" />
+        <code id="tuneStaggerVal">30ms</code>
 
         <label for="tuneStride">Stride</label>
         <input id="tuneStride" type="range" min="0" max="400" step="5" value="200" />
