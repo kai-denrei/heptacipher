@@ -198,7 +198,9 @@ export function renderHeptapodNumeralV2({
   // actually advances the rng to produce the body wobble + brush jitter.
   // bodyGeo above used 0 rng calls (it's pure geometry), so the rng state
   // is unchanged. Now we call enso() which consumes rng draws as normal.
-  const ensoPath = enso({
+  // Returns BOTH the filled brush outline AND the wobbly spine polyline —
+  // the spine drives the quiz's draw-mask animation.
+  const { outlineD: ensoPath, spineD: ensoSpineD } = enso({
     cx,
     cy,
     radius,
@@ -231,8 +233,11 @@ export function renderHeptapodNumeralV2({
   }
 
   // APPENDAGES -----------------------------------------------------------
+  // Each appendage now returns {body, spine, sideClass, digit} so we can
+  // wrap the body in <g mask="..."> below and emit the spine into the
+  // mask's stroked path for the per-lobe draw-by-stroke-dashoffset reveal.
   const appendageScale = radius * 0.85; // shared budget; lobe size dominates
-  const appendageFragments = [];
+  const appendageResults = [];
 
   const lobeSpans = computeLobeSpans(digitGap);
 
@@ -249,7 +254,7 @@ export function renderHeptapodNumeralV2({
     const baseBulge = (inward ? LOBE_BULGE_INWARD : LOBE_BULGE_OUTWARD) * bulgeScale;
     const bulge = baseBulge + rng.gauss(0, LOBE_BULGE_JITTER);
 
-    const fragment = encoding === 'morse'
+    const result = encoding === 'morse'
       ? morseDigitArcAppendage({
           digit,
           lobeStartPoint: lobeStart,
@@ -274,7 +279,7 @@ export function renderHeptapodNumeralV2({
           inward,
         });
 
-    appendageFragments.push(fragment);
+    appendageResults.push(result);
   }
 
   // WET-DROP -------------------------------------------------------------
@@ -337,6 +342,39 @@ export function renderHeptapodNumeralV2({
   // headroom on every side. Combined with svg overflow="visible" and the
   // padded viewBox below, the wet halo never hits a rectangular clip line.
   const FILTER_BOUNDS = 'x="-250%" y="-250%" width="600%" height="600%"';
+
+  // --- Draw-spine masks ----------------------------------------------------
+  // One mask per logical element that needs to be "drawn" in time:
+  //   • 1 mask for the ensō ring (its full body+tail spine)
+  //   • 4 masks for the lobes (each lobe's Bezier spine)
+  // Each mask contains a stroked path with pathLength=100 so CSS can animate
+  // stroke-dashoffset 100→0 to reveal the path progressively. The stroke is
+  // wide enough to cover the brush + most of the wet halo, and a CSS filter
+  // blur on the path softens the brush tip (Smoothness slider).
+  // The wet-drop is NOT masked — it splashes on its own via CSS bloomDrop.
+  const ensoMaskId = `draw-enso-${idTag}`;
+  const lobeMaskIds = appendageResults.map((_, i) => `draw-lobe-${i + 1}-${idTag}`);
+  // Stroke width = generous fraction of size; covers brush (~size×0.06) plus
+  // a margin for the halo bleed. CSS Smoothness/filter:blur on top widens
+  // the effective reveal further.
+  const MASK_STROKE_WIDTH = (size * 0.18).toFixed(0);
+  const maskDefs = [
+    `<mask id="${ensoMaskId}" maskUnits="userSpaceOnUse">
+       <path class="draw-spine" data-element="enso"
+             d="${ensoSpineD}" stroke="white" stroke-width="${MASK_STROKE_WIDTH}"
+             stroke-linecap="round" stroke-linejoin="round" fill="none"
+             pathLength="100" />
+     </mask>`,
+    ...appendageResults.map((r, i) => (
+      `<mask id="${lobeMaskIds[i]}" maskUnits="userSpaceOnUse">
+         <path class="draw-spine" data-element="lobe" data-lobe="${i + 1}"
+               d="${r.spine}" stroke="white" stroke-width="${MASK_STROKE_WIDTH}"
+               stroke-linecap="round" stroke-linejoin="round" fill="none"
+               pathLength="100" />
+       </mask>`
+    )),
+  ].join('');
+
   const defs = `
     <defs>
       <filter id="${filterFarId}" ${FILTER_BOUNDS}>
@@ -353,6 +391,7 @@ export function renderHeptapodNumeralV2({
         <feTurbulence type="fractalNoise" baseFrequency="${(detail * 1.8).toFixed(4)}" numOctaves="2" seed="${turbSeedCrisp}" result="turb" />
         <feDisplacementMap in="SourceGraphic" in2="turb" scale="${(wobblePx * 0.30).toFixed(2)}" />
       </filter>
+      ${maskDefs}
     </defs>
   `;
 
@@ -360,10 +399,17 @@ export function renderHeptapodNumeralV2({
   // a far-soak halo (heaviest blur, lowest opacity), a near-soak halo (light
   // blur, mid opacity), and the crisp layer on top. The halo layers are
   // tagged data-halo="true" so sample.js can skip them.
+  // The ensō group and each appendage group apply their mask= attribute, so
+  // the brush's draw animation reveals each progressively.
+  const appendageWrapped = appendageResults
+    .map((r, i) => (
+      `<g class="appendage ${r.encoding}-arc ${r.sideClass} digit-${r.digit}" mask="url(#${lobeMaskIds[i]})">${r.body}</g>`
+    ))
+    .join('');
   const inkContent = [
-    `<g class="enso"><path d="${ensoPath}" /></g>`,
+    `<g class="enso" mask="url(#${ensoMaskId})"><path d="${ensoPath}" /></g>`,
     `<g class="wet-drop"><path d="${wetDropPath}" /></g>`,
-    `<g class="appendages">${appendageFragments.join('')}</g>`,
+    `<g class="appendages">${appendageWrapped}</g>`,
   ].join('');
 
   // Padded viewBox — give the halo room to extend past the drawing area

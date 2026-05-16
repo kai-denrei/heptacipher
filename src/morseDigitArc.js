@@ -272,5 +272,12 @@ export function morseDigitArcAppendage({
   });
 
   const sideClass = inward ? 'inward' : 'outward';
-  return `<g class="appendage morse-arc ${sideClass} digit-${digit}">${body}</g>`;
+  // Lobe spine = the cubic Bezier the marks ride on. compositeFlow wraps
+  // `body` in a <g class="appendage..." mask="..."> and emits a separate
+  // <mask> whose stroked spine path is animated via stroke-dashoffset.
+  const spine = `M ${ctrl[0].x.toFixed(2)},${ctrl[0].y.toFixed(2)} `
+              + `C ${ctrl[1].x.toFixed(2)},${ctrl[1].y.toFixed(2)} `
+              +   `${ctrl[2].x.toFixed(2)},${ctrl[2].y.toFixed(2)} `
+              +   `${ctrl[3].x.toFixed(2)},${ctrl[3].y.toFixed(2)}`;
+  return { body, spine, sideClass, digit, encoding: 'morse' };
 }

@@ -141,5 +141,9 @@ export function prongDigitArcAppendage({
   });
 
   const sideClass = inward ? 'inward' : 'outward';
-  return `<g class="appendage prong-arc ${sideClass} digit-${digit}">${body}</g>`;
+  const spine = `M ${ctrl[0].x.toFixed(2)},${ctrl[0].y.toFixed(2)} `
+              + `C ${ctrl[1].x.toFixed(2)},${ctrl[1].y.toFixed(2)} `
+              +   `${ctrl[2].x.toFixed(2)},${ctrl[2].y.toFixed(2)} `
+              +   `${ctrl[3].x.toFixed(2)},${ctrl[3].y.toFixed(2)}`;
+  return { body, spine, sideClass, digit, encoding: 'prong' };
 }

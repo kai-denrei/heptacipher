@@ -136,7 +136,7 @@ export function enso({
 
   const peakWidth = maxWidth ?? Math.max(3, radius * 0.06);
 
-  return brushStroke({
+  const outlineD = brushStroke({
     controlPoints,
     widthProfile: ensoWidth,
     maxWidth: peakWidth,
@@ -144,4 +144,15 @@ export function enso({
     rng,
     samples: 80, // ensō is the longest stroke — use more samples
   });
+
+  // Spine polyline (joining the wobbled control points). Used by the quiz
+  // reveal animation as a stroked path inside an SVG mask — animating its
+  // stroke-dashoffset reveals the brush outline progressively, matching the
+  // brush's gesture along its own (wobbly) spine rather than a sector
+  // from the ring's geometric center.
+  const spineD = 'M ' + controlPoints
+    .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+    .join(' L ');
+
+  return { outlineD, spineD };
 }
